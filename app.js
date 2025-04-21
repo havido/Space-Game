@@ -13,6 +13,9 @@ class EventEmitter {
       this.listeners[message].forEach((l) => l(message, payload));
     }
   }
+  clear() {
+    this.listeners = {};
+  }
 }
 
 function loadTexture(path) {
@@ -85,6 +88,10 @@ class Hero extends GameObject {
   }
 }
 
+function isHeroDead() {
+  return hero.life <= 0;
+}
+
 class Enemy extends GameObject {
   constructor(x, y) {
     super(x, y);
@@ -101,6 +108,11 @@ class Enemy extends GameObject {
       }
     }, 300);
   }
+}
+
+function isEnemiesDead() {
+  const enemies = gameObjects.filter((go) => go.type === "Enemy" && !go.dead);
+  return enemies.length === 0;
 }
 
 class Laser extends GameObject {
@@ -161,11 +173,15 @@ const Messages = {
   KEY_EVENT_LEFT: 'KEY_EVENT_LEFT',
   KEY_EVENT_RIGHT: 'KEY_EVENT_RIGHT',
   KEY_EVENT_SPACE: 'KEY_EVENT_SPACE',
+  KEY_EVENT_ENTER: 'KEY_EVENT_ENTER',
   COLLISION_ENEMY_LASER: 'COLLISION_ENEMY_LASER',
   COLLISION_ENEMY_HERO: 'COLLISION_ENEMY_HERO',
+  GAME_END_WIN: 'GAME_END_WIN',
+  GAME_END_LOSS: 'GAME_END_LOSS',
 };
 
 let heroImg, enemyImg, laserImg, lifeImg, canvas, ctx, gameObjects = [], hero, eventEmitter = new EventEmitter();
+let gameLoopId;
 
 let onKeyDown = function(e) {
   console.log(e.keyCode);
@@ -195,6 +211,8 @@ window.addEventListener('keyup', (evt) => {
   } else if (evt.key == ' ') {
     eventEmitter.emit(Messages.KEY_EVENT_SPACE);
     // console.log('should have fired laser');
+  } else if (evt.key == 'Enter') {
+    eventEmitter.emit(Messages.KEY_EVENT_ENTER);
   }
 });
 
@@ -245,11 +263,52 @@ function drawText(message, x, y) {
   ctx.fillText(message, x, y);
 }
 
+function displayMessage(message, color = 'red') {
+  ctx.font = '30px Arial';
+  ctx.fillStyle = color;
+  ctx.textAlign = 'center';
+  ctx.fillText(message, canvas.width / 2, canvas.height / 2);
+}
+
+function endGame(win) {
+  clearInterval(gameLoopId);
+
+  // set a delay so we are sure any paints have finished
+  setTimeout(() => {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = 'black';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    if (win) {
+      displayMessage("YOU WON! - Press [Enter] to start a new game", 'green');
+    } else {
+      displayMessage("YOU DIED! - Press [Enter] to start a new game");
+    }
+  }, 200);
+}
+
+function resetGame() {
+  if (gameLoopId) {
+    clearInterval(gameLoopId);
+    eventEmitter.clear();
+    initGame();
+    gameLoopId = setInterval(() => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      ctx.fillStyle = 'black';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      updateGameObjects();
+      drawPoints();
+      drawLife();
+      drawGameObjects(ctx);
+    }, 100);
+  }
+}
+
 function initGame() {
   gameObjects = [];
   createEnemies();
   createHero();
 
+  // Keyboard events
   eventEmitter.on(Messages.KEY_EVENT_UP, () => {
     hero.y -= 5;
   });
@@ -270,14 +329,43 @@ function initGame() {
       // console.log('not able to fire - in cd');
     }
   });
+
+  // Collision events
   eventEmitter.on(Messages.COLLISION_ENEMY_LASER, (_, { first, second }) => {
     first.dead = true;
     second.dead = true;
     hero.incrementPoints();
+    if (isEnemiesDead()) {
+      eventEmitter.emit(Messages.GAME_END_WIN);
+    }
   });
+
   eventEmitter.on(Messages.COLLISION_ENEMY_HERO, (_, { enemy }) => {
     enemy.dead = true;
     hero.decrementLife();
+    if (isHeroDead()) {
+      eventEmitter.emit(Messages.GAME_END_LOSS);
+      return; // loss before victory
+    }
+    if (isEnemiesDead()) {
+      eventEmitter.emit(Messages.GAME_END_WIN);
+    }
+  });
+
+  // Endgame events
+  eventEmitter.on(Messages.GAME_END_WIN, () => {
+    endGame(true);
+  });
+  eventEmitter.on(Messages.GAME_END_LOSS, () => {
+    endGame(false);
+  });
+  eventEmitter.on(Messages.KEY_EVENT_ENTER, () => {
+    if (isHeroDead() || isEnemiesDead()) {
+      resetGame();
+    }
+  });
+  eventEmitter.on(Messages.KEY_EVENT_ENTER, () => {
+    resetGame();
   });
 }
 
@@ -290,7 +378,7 @@ window.onload = async () => {
   lifeImg = await loadTexture('./assets/life.png');
 
   initGame();
-  let gameLoopId = setInterval(() => {
+  gameLoopId = setInterval(() => {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = 'black';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
