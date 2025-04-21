@@ -38,6 +38,14 @@ class GameObject {
   draw(ctx) {
     ctx.drawImage(this.img, this.x, this.y, this.width, this.height);
   }
+  rectFromGameObject() {
+    return {
+      left: this.x,
+      top: this.y,
+      right: this.width + this.x,
+      bottom: this.height + this.y,
+    };
+  }
 }
 
 class Hero extends GameObject {
@@ -47,6 +55,22 @@ class Hero extends GameObject {
     this.width = 99;
     this.height = 75;
     this.speed = { x:0, y:0};
+    this.cooldown = 0; // init to 0
+  }
+  fire() {
+    gameObjects.push(new Laser(this.x + 45, this.y - 10));
+    this.cooldown = 500;
+
+    let id = setInterval(() => {
+      if (this.cooldown > 0) {
+        this.cooldown -= 100;
+      } else {
+          clearInterval(id);
+      }
+    }, 200);
+  }
+  canFire() {
+    return this.cooldown === 0;
   }
 }
 
@@ -68,11 +92,59 @@ class Enemy extends GameObject {
   }
 }
 
+class Laser extends GameObject {
+  constructor(x, y) {
+    super(x,y);
+    this.type = 'Laser';
+    this.width = 9; 
+    this.height = 33;
+    this.img = laserImg;
+    let id = setInterval(() => {
+      if (this.y > 0) {
+        this.y -= 15;
+      } else {
+        this.dead = true;
+        clearInterval(id);
+      }
+    }, 100)
+  }
+}
+
+function intersectRect(r1, r2) {
+  return !(
+    r2.left > r1.right ||
+    r2.right < r1.left ||
+    r2.top > r1.bottom ||
+    r2.bottom < r1.top
+  );
+}
+
+function updateGameObjects() {
+  const enemies = gameObjects.filter(go => go.type === 'Enemy');
+  const lasers = gameObjects.filter((go) => go.type === "Laser");
+  // laser hit something
+  lasers.forEach((l) => {
+    enemies.forEach((m) => {
+      if (intersectRect(l.rectFromGameObject(), m.rectFromGameObject())) {
+        eventEmitter.emit(Messages.COLLISION_ENEMY_LASER, {
+          first: l,
+          second: m,
+        });
+      }
+    });  
+  });
+
+  gameObjects = gameObjects.filter(go => !go.dead);
+}  
+
 const Messages = {
   KEY_EVENT_UP: 'KEY_EVENT_UP',
   KEY_EVENT_DOWN: 'KEY_EVENT_DOWN',
   KEY_EVENT_LEFT: 'KEY_EVENT_LEFT',
   KEY_EVENT_RIGHT: 'KEY_EVENT_RIGHT',
+  KEY_EVENT_SPACE: 'KEY_EVENT_SPACE',
+  COLLISION_ENEMY_LASER: 'COLLISION_ENEMY_LASER',
+  COLLISION_ENEMY_HERO: 'COLLISION_ENEMY_HERO',
 };
 
 let heroImg, enemyImg, laserImg, canvas, ctx, gameObjects = [], hero, eventEmitter = new EventEmitter();
@@ -102,6 +174,9 @@ window.addEventListener('keyup', (evt) => {
     eventEmitter.emit(Messages.KEY_EVENT_LEFT);
   } else if (evt.key == 'ArrowRight') {
     eventEmitter.emit(Messages.KEY_EVENT_RIGHT);
+  } else if (evt.key == ' ') {
+    eventEmitter.emit(Messages.KEY_EVENT_SPACE);
+    // console.log('should have fired laser');
   }
 });
 
@@ -150,6 +225,18 @@ function initGame() {
   eventEmitter.on(Messages.KEY_EVENT_RIGHT, () => {
     hero.x += 5;
   });
+  eventEmitter.on(Messages.KEY_EVENT_SPACE, () => {
+    if (hero.canFire()) {
+      // console.log('able to fire');
+      hero.fire();
+    } else {
+      // console.log('not able to fire - in cd');
+    }
+  });
+  eventEmitter.on(Messages.COLLISION_ENEMY_LASER, (_, { first, second }) => {
+    first.dead = true;
+    second.dead = true;
+  });
 }
 
 window.onload = async () => {
@@ -164,6 +251,7 @@ window.onload = async () => {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     ctx.fillStyle = 'black';
     ctx.fillRect(0, 0, canvas.width, canvas.height);
+    updateGameObjects();
     drawGameObjects(ctx);
   }, 100)
 };
