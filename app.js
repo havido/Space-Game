@@ -1,3 +1,68 @@
+class GameObject {
+  constructor(x, y) {
+    this.x = x;
+    this.y = y;
+    this.dead = false;
+    this.type = "";
+    this.width = 0;
+    this.height = 0;
+    this.img = undefined;
+  }
+  draw(ctx) {
+    ctx.drawImage(this.img, this.x, this.y, this.width, this.height);
+  }
+}
+
+class Hero extends GameObject {
+  constructor(x, y) {
+    super(x, y);
+    this.type = "Hero";
+    this.width = 90;
+    this.height = 90;
+    this.speed = 5;
+  }
+}
+
+class Enemy extends GameObject {
+  constructor(x, y) {
+    super(x, y);
+    this.type = "Enemy";
+    this.width = 98;
+    this.height = 50;
+    this.speed = 2;
+    let id = setInterval(() => {
+      if (this.y < canvas.height - this.height) {
+        this.y += 5;
+      } else {
+        console.log('Stopped at', this.y);
+        clearInterval(id);
+      }
+    }, 300);
+  }
+}
+
+let onKeyDown = function(e) {
+  console.log(e.keyCode);
+  if (e.keyCode === 37) {
+    // left arrow
+    e.preventDefault();
+    Hero.x -= Hero.speed;
+  } else if (e.keyCode === 39) {
+    // right arrow
+    e.preventDefault();
+    Hero.x += Hero.speed;
+  } else if (e.keyCode === 38) {
+    // up arrow
+    e.preventDefault();
+    Hero.y -= Hero.speed;
+  } else if (e.keyCode === 40) {
+    // down arrow
+    e.preventDefault();
+    Hero.y += Hero.speed;
+  }
+}
+window.addEventListener('keydown', onKeyDown);
+
 function loadTexture(path) {
   return new Promise((resolve) => {
     const img = new Image()
