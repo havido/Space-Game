@@ -1,3 +1,30 @@
+class EventEmitter {
+  constructor() {
+    this.listeners = {};
+  }
+  on(message, listener) {
+    if (!this.listeners[message]) {
+      this.listeners[message] = [];
+    }
+    this.listeners[message].push(listener);
+  }
+  emit(message, payload = null) {
+    if (this.listeners[message]) {
+      this.listeners[message].forEach((l) => l(message, payload));
+    }
+  }
+}
+
+function loadTexture(path) {
+  return new Promise((resolve) => {
+    const img = new Image()
+    img.src = path
+    img.onload = () => {
+      resolve(img)
+    }
+  })
+}
+
 class GameObject {
   constructor(x, y) {
     this.x = x;
@@ -17,9 +44,9 @@ class Hero extends GameObject {
   constructor(x, y) {
     super(x, y);
     this.type = "Hero";
-    this.width = 90;
-    this.height = 90;
-    this.speed = 5;
+    this.width = 99;
+    this.height = 75;
+    this.speed = { x:0, y:0};
   }
 }
 
@@ -29,7 +56,7 @@ class Enemy extends GameObject {
     this.type = "Enemy";
     this.width = 98;
     this.height = 50;
-    this.speed = 2;
+    // this.speed = 2;
     let id = setInterval(() => {
       if (this.y < canvas.height - this.height) {
         this.y += 5;
@@ -41,65 +68,102 @@ class Enemy extends GameObject {
   }
 }
 
+const Messages = {
+  KEY_EVENT_UP: 'KEY_EVENT_UP',
+  KEY_EVENT_DOWN: 'KEY_EVENT_DOWN',
+  KEY_EVENT_LEFT: 'KEY_EVENT_LEFT',
+  KEY_EVENT_RIGHT: 'KEY_EVENT_RIGHT',
+};
+
+let heroImg, enemyImg, laserImg, canvas, ctx, gameObjects = [], hero, eventEmitter = new EventEmitter();
+
 let onKeyDown = function(e) {
   console.log(e.keyCode);
-  if (e.keyCode === 37) {
-    // left arrow
-    e.preventDefault();
-    Hero.x -= Hero.speed;
-  } else if (e.keyCode === 39) {
-    // right arrow
-    e.preventDefault();
-    Hero.x += Hero.speed;
-  } else if (e.keyCode === 38) {
-    // up arrow
-    e.preventDefault();
-    Hero.y -= Hero.speed;
-  } else if (e.keyCode === 40) {
-    // down arrow
-    e.preventDefault();
-    Hero.y += Hero.speed;
+  switch (e.keyCode) {
+    case 37: // left arrow
+    case 38: // up arrow
+    case 39: // right arrow
+    case 40: // down arrow
+    case 32: // space
+      e.preventDefault();
+      break;
+    default: break; // don't block other keys
   }
 }
+
 window.addEventListener('keydown', onKeyDown);
 
-function loadTexture(path) {
-  return new Promise((resolve) => {
-    const img = new Image()
-    img.src = path
-    img.onload = () => {
-      resolve(img)
-    }
-  })
-}
+window.addEventListener('keyup', (evt) => {
+  if (evt.key == 'ArrowUp') {
+    eventEmitter.emit(Messages.KEY_EVENT_UP);
+  } else if (evt.key == 'ArrowDown') {
+    eventEmitter.emit(Messages.KEY_EVENT_DOWN);
+  } else if (evt.key == 'ArrowLeft') {
+    eventEmitter.emit(Messages.KEY_EVENT_LEFT);
+  } else if (evt.key == 'ArrowRight') {
+    eventEmitter.emit(Messages.KEY_EVENT_RIGHT);
+  }
+});
 
-function createEnemies(ctx, canvas, enemyImg) {
-  // TODO draw enemies
+function createEnemies() {
   const MONSTER_TOTAL = 5;
   const MONSTER_WIDTH = MONSTER_TOTAL * 98;
   const START_X = (canvas.width - MONSTER_WIDTH) / 2;
   const STOP_X = START_X + MONSTER_WIDTH;
+
   for (let x = START_X; x < STOP_X; x += 98) {
     for (let y = 0; y < 50 * 5; y += 50) {
-      ctx.drawImage(enemyImg, x, y);
+      const enemy = new Enemy(x, y);
+      enemy.img = enemyImg;
+      gameObjects.push(enemy);
     }
   }
 }
 
-window.onload = async () => {
-  canvas = document.getElementById('canvas')
-  ctx = canvas.getContext('2d')
-  // TODO load textures
-  const hero = await loadTexture('./assets/player.png')
-  const enemy = await loadTexture('./assets/enemyShip.png')
-
-  // TODO draw black background
-  ctx.fillStyle = 'black';
-  ctx.fillRect(0,0,canvas.width,canvas.height);
-
-  // TODO draw hero
-  ctx.drawImage(hero, canvas.width/2 - 45, canvas.height - canvas.height/4);
-
-  // TODO uncomment the next line when you add enemies to screen
-  createEnemies(ctx, canvas, enemy);
+function createHero() {
+  hero = new Hero(
+    canvas.width / 2 - 45,
+    canvas.height - canvas.height / 4
+  );
+  hero.img = heroImg;
+  gameObjects.push(hero);
 }
+
+function drawGameObjects(ctx) {
+  gameObjects.forEach(go => go.draw(ctx));
+}
+
+function initGame() {
+  gameObjects = [];
+  createEnemies();
+  createHero();
+
+  eventEmitter.on(Messages.KEY_EVENT_UP, () => {
+    hero.y -= 5;
+  });
+  eventEmitter.on(Messages.KEY_EVENT_DOWN, () => {
+    hero.y += 5;
+  });
+  eventEmitter.on(Messages.KEY_EVENT_LEFT, () => {
+    hero.x -= 5;
+  });
+  eventEmitter.on(Messages.KEY_EVENT_RIGHT, () => {
+    hero.x += 5;
+  });
+}
+
+window.onload = async () => {
+  canvas = document.getElementById('canvas');
+  ctx = canvas.getContext('2d');
+  heroImg = await loadTexture('./assets/player.png');
+  enemyImg = await loadTexture('./assets/enemyShip.png');
+  laserImg = await loadTexture('./assets/laserRed.png');
+  
+  initGame();
+  let gameLoopId = setInterval(() => {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = 'black';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    drawGameObjects(ctx);
+  }, 100)
+};
